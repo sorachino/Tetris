@@ -339,7 +339,7 @@ function update(dt){
 
 /* ===================== 通信（WebSocket 中継） ===================== */
 // 別ホスト（GitHub Pages等）から使う場合のみ、中継サーバーのホスト名を入れる（例: 'xxxx.onrender.com'）
-const PROD_HOST = '';
+const PROD_HOST = 'tetris-versus.onrender.com';
 const SERVER_HOST = PROD_HOST || location.host;
 const SERVER = (PROD_HOST ? 'wss://' : (location.protocol==='https:' ? 'wss://' : 'ws://')) + SERVER_HOST;
 let ws=null, paired=false, roomCode='';
