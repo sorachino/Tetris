@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>オンライン対戦テトリス</title>
+<style>
+:root{--bg:#0b1020;--panel:#141b34;--line:#2a3566;--text:#e6e9f5;--sub:#9aa4d0;--accent:#6366f1}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;overscroll-behavior:none}
+body{overflow:hidden;-webkit-user-select:none;user-select:none}
+[hidden]{display:none!important}
+.screen{height:100%;width:100%}
+#lobby{overflow-y:auto;padding:24px 16px calc(24px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto;-webkit-user-select:text;user-select:text}
+h1{font-size:26px;margin:8px 0 4px}
+p.lead{color:var(--sub);margin:0 0 20px;font-size:14px;line-height:1.6}
+.btn{appearance:none;border:0;border-radius:12px;padding:14px 18px;font-size:16px;font-weight:700;color:#fff;background:var(--accent);cursor:pointer;width:100%}
+.btn.sec{background:#2a3566}
+.btn:disabled{opacity:.5}
+.btn+.btn{margin-top:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin:14px 0}
+.card h3{margin:0 0 8px;font-size:15px}
+.card p{margin:0 0 8px;font-size:13px;color:var(--sub);line-height:1.6}
+textarea{width:100%;height:96px;border-radius:10px;border:1px solid var(--line);background:#0b1020;color:var(--text);
+  padding:10px;font:12px/1.4 ui-monospace,Menlo,monospace;resize:none;word-break:break-all}
+.row{display:flex;gap:8px;margin-top:8px}
+.row .btn{padding:10px 12px;font-size:14px}
+.row .btn+.btn{margin-top:0}
+#lobbyMsg{color:#fca5a5;font-size:13px;min-height:20px;margin-top:8px;line-height:1.5}
+.note{font-size:12px;color:var(--sub);line-height:1.6}
+
+#game{display:flex;flex-direction:column}
+#stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
+#cv{display:block}
+#overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(11,16,32,.78);gap:12px;text-align:center;padding:20px}
+#ovTitle{font-size:34px;font-weight:800}
+#ovSub{color:var(--sub);font-size:14px}
+#ovBtn{width:auto;min-width:220px}
+#touch{display:none;gap:10px;padding:8px 10px calc(10px + env(safe-area-inset-bottom));touch-action:none}
+@media (pointer:coarse){#touch{display:flex}}
+.pad{display:flex;gap:6px}
+.pad.l{flex:3}.pad.r{flex:4}
+.pad button{flex:1;height:64px;border:0;border-radius:14px;background:#26305a;color:#e6e9f5;font-size:20px;font-weight:700;touch-action:none}
+.pad button:active,.pad button.on{background:var(--accent)}
+.pad button.sm{font-size:12px}
+</style>
+</head>
+<body>
+
+<div id="lobby" class="screen">
+  <h1>対戦テトリス</h1>
+  <p class="lead">2人用オンライン対戦。サーバー不要（P2P通信）。接続コードを2人で交換するだけで遊べます。</p>
+
+  <div id="lobbyMain">
+    <button class="btn" id="btnHost">部屋を作る（ホスト）</button>
+    <button class="btn sec" id="btnGuest">部屋に入る（ゲスト）</button>
+    <div class="card">
+      <h3>ルール</h3>
+      <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、自分が消去すれば相殺できます。</p>
+    </div>
+  </div>
+
+  <div id="hostFlow" hidden>
+    <div class="card">
+      <h3>① このコードを相手に送る</h3>
+      <p>LINEなどで相手に送ってください。</p>
+      <textarea id="offerOut" readonly placeholder="生成中…"></textarea>
+      <div class="row">
+        <button class="btn sec" id="offerCopy">コピー</button>
+        <button class="btn sec" id="offerShare" hidden>共有</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>② 相手から返ってきたコードを貼る</h3>
+      <textarea id="answerIn" placeholder="相手の返信コードをここに貼り付け"></textarea>
+      <div class="row">
+        <button class="btn sec" id="answerPaste">貼り付け</button>
+        <button class="btn" id="btnConnect">接続する</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="guestFlow" hidden>
+    <div class="card">
+      <h3>① ホストのコードを貼る</h3>
+      <textarea id="offerIn" placeholder="ホストから届いたコードをここに貼り付け"></textarea>
+      <div class="row">
+        <button class="btn sec" id="offerPaste">貼り付け</button>
+        <button class="btn" id="btnMakeAnswer">返信コードを作る</button>
+      </div>
+    </div>
+    <div class="card" id="answerCard" hidden>
+      <h3>② この返信コードをホストに送る</h3>
+      <p>ホストが貼り付けて「接続する」を押すと、自動で対戦画面に切り替わります。</p>
+      <textarea id="answerOut" readonly></textarea>
+      <div class="row">
+        <button class="btn sec" id="answerCopy">コピー</button>
+        <button class="btn sec" id="answerShare" hidden>共有</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lobbyMsg"></div>
+  <p class="note" id="lobbyNote" hidden>※ 接続できない場合：どちらかがモバイル回線（キャリア網）だとNAT越えに失敗することがあります。Wi-Fiに切り替えるか、コードを作り直してください。</p>
+</div>
+
+<div id="game" class="screen" hidden>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="overlay" hidden>
+      <div id="ovTitle"></div>
+      <div id="ovSub"></div>
+      <button class="btn" id="ovBtn"></button>
+    </div>
+  </div>
+  <div id="touch">
+    <div class="pad l">
+      <button data-k="left">◀</button>
+      <button data-k="down">▼</button>
+      <button data-k="right">▶</button>
+    </div>
+    <div class="pad r">
+      <button data-k="hold" class="sm">HOLD</button>
+      <button data-k="ccw">↺</button>
+      <button data-k="cw">↻</button>
+      <button data-k="hard">⤓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ===================== 定数・ピース定義 ===================== */
+const COLS = 10, ROWS = 22, HID = 2, VIS = 20;
+const TYPES = ['I','O','T','S','Z','J','L'];
+const COLORS = {I:'#22d3ee',O:'#facc15',T:'#a855f7',S:'#4ade80',Z:'#f87171',J:'#60a5fa',L:'#fb923c'};
+const GARBAGE = '#6b7280';
+const BASE = {
+  I:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+  O:[[1,1],[1,1]],
+  T:[[0,1,0],[1,1,1],[0,0,0]],
+  S:[[0,1,1],[1,1,0],[0,0,0]],
+  Z:[[1,1,0],[0,1,1],[0,0,0]],
+  J:[[1,0,0],[1,1,1],[0,0,0]],
+  L:[[0,0,1],[1,1,1],[0,0,0]],
+};
+function rotCW(m){const n=m.length,o=[];for(let r=0;r<n;r++){o.push([]);for(let c=0;c<n;c++)o[r][c]=m[n-1-c][r];}return o;}
+const SHAPES = {};
+for (const t of TYPES) {
+  const rots=[BASE[t]];
+  for (let i=1;i<4;i++) rots.push(rotCW(rots[i-1]));
+  SHAPES[t]=rots.map(m=>{const cells=[];m.forEach((row,r)=>row.forEach((v,c)=>{if(v)cells.push([r,c]);}));return cells;});
+}
+// SRS ウォールキック（y は上が正）
+const KJ = {
+  '0>1':[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]], '1>0':[[0,0],[1,0],[1,-1],[0,2],[1,2]],
+  '1>2':[[0,0],[1,0],[1,-1],[0,2],[1,2]],     '2>1':[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],
+  '2>3':[[0,0],[1,0],[1,1],[0,-2],[1,-2]],    '3>2':[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],
+  '3>0':[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],  '0>3':[[0,0],[1,0],[1,1],[0,-2],[1,-2]],
+};
+const KI = {
+  '0>1':[[0,0],[-2,0],[1,0],[-2,-1],[1,2]],   '1>0':[[0,0],[2,0],[-1,0],[2,1],[-1,-2]],
+  '1>2':[[0,0],[-1,0],[2,0],[-1,2],[2,-1]],   '2>1':[[0,0],[1,0],[-2,0],[1,-2],[-2,1]],
+  '2>3':[[0,0],[2,0],[-1,0],[2,1],[-1,-2]],   '3>2':[[0,0],[-2,0],[1,0],[-2,-1],[1,2]],
+  '3>0':[[0,0],[1,0],[-2,0],[1,-2],[-2,1]],   '0>3':[[0,0],[-1,0],[2,0],[-1,2],[2,-1]],
+};
+const ATK = [0,0,1,2,4];
+const colorOf = v => v===8 ? GARBAGE : COLORS[TYPES[v-1]];
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+/* ===================== ゲーム状態 ===================== */
+let phase = 'lobby';          // lobby | idle | countdown | playing
+let G = null, OPP = null;
+let myReady = false, oppReady = false, lastResult = null, firstRound = true;
+let isHost = false, pc = null, dc = null;
+
+const emptyBoard = () => Array.from({length:ROWS},()=>new Array(COLS).fill(0));
+
+function newRound(seed){
+  G = {
+    board: emptyBoard(), rng: mulberry32(seed), bag: [], queue: [], cur: null, hold: null, canHold: true,
+    pending: [], combo: -1, gravT: 0, lockT: 0, resets: 0, lowest: 0, t: 0, sendT: 0,
+    over: false, cd: 3000, sent: 0, lines: 0, topped: false,
+  };
+  fillQueue();
+  spawn();
+}
+function fillQueue(){
+  while (G.queue.length < 6) {
+    if (!G.bag.length) {
+      const b = TYPES.slice();
+      for (let i=b.length-1;i>0;i--){const j=Math.floor(G.rng()*(i+1));[b[i],b[j]]=[b[j],b[i]];}
+      G.bag = b;
+    }
+    G.queue.push(G.bag.pop());
+  }
+}
+function collides(t, rot, x, y){
+  for (const [r,c] of SHAPES[t][rot]) {
+    const bx=x+c, by=y+r;
+    if (bx<0 || bx>=COLS || by<0 || by>=ROWS) return true;
+    if (G.board[by][bx]) return true;
+  }
+  return false;
+}
+function spawn(type){
+  const t = type || G.queue.shift();
+  fillQueue();
+  G.cur = {t, rot:0, x: t==='O'?4:3, y:1};
+  G.canHold = true; G.gravT = 0; G.lockT = 0; G.resets = 0; G.lowest = G.cur.y;
+  if (collides(t,0,G.cur.x,G.cur.y)) die();
+}
+function onGround(){ return collides(G.cur.t,G.cur.rot,G.cur.x,G.cur.y+1); }
+function tryMove(dx,dy){
+  const c=G.cur;
+  if (collides(c.t,c.rot,c.x+dx,c.y+dy)) return false;
+  c.x+=dx; c.y+=dy;
+  if (c.y>G.lowest){G.lowest=c.y;G.resets=0;}
+  if (dy>0) G.lockT=0;
+  return true;
+}
+function afterShift(){ if (onGround() && G.resets<15){G.lockT=0;G.resets++;} }
+function move(dx){ if (tryMove(dx,0)) afterShift(); }
+function rotate(d){
+  const c=G.cur; if (c.t==='O') return;
+  const from=c.rot, to=(from+d+4)%4;
+  const kicks=(c.t==='I'?KI:KJ)[from+'>'+to];
+  for (const [kx,ky] of kicks) {
+    if (!collides(c.t,to,c.x+kx,c.y-ky)) { c.rot=to; c.x+=kx; c.y-=ky; if (c.y>G.lowest){G.lowest=c.y;G.resets=0;} afterShift(); return; }
+  }
+}
+function holdPiece(){
+  if (!G.canHold) return;
+  const t=G.cur.t;
+  if (G.hold===null) { G.hold=t; spawn(); } else { const h=G.hold; G.hold=t; spawn(h); }
+  G.canHold=false;
+}
+function hardDrop(){ while (tryMove(0,1)); lockPiece(); }
+
+function ghostY(){
+  const c=G.cur; let y=c.y;
+  while (!collides(c.t,c.rot,c.x,y+1)) y++;
+  return y;
+}
+function pendingTotal(){ return G.pending.reduce((s,p)=>s+p.n,0); }
+
+function lockPiece(){
+  const c=G.cur, idx=TYPES.indexOf(c.t)+1;
+  for (const [r,cc] of SHAPES[c.t][c.rot]) G.board[c.y+r][c.x+cc]=idx;
+  let cleared=0;
+  for (let r=ROWS-1;r>=0;r--) {
+    if (G.board[r].every(v=>v)) { G.board.splice(r,1); G.board.unshift(new Array(COLS).fill(0)); cleared++; r++; }
+  }
+  if (cleared) {
+    G.combo++;
+    G.lines += cleared;
+    let atk = ATK[Math.min(cleared,4)];
+    if (G.combo>0) atk += Math.min(4, Math.ceil(G.combo/2));
+    if (G.board.every(row=>row.every(v=>!v))) atk += 6;
+    while (atk>0 && G.pending.length) {           // 相殺
+      const p=G.pending[0], d=Math.min(atk,p.n);
+      p.n-=d; atk-=d; if (p.n===0) G.pending.shift();
+    }
+    if (atk>0) { send({t:'g', n:atk, hole:Math.floor(Math.random()*COLS)}); G.sent+=atk; }
+  } else {
+    G.combo=-1;
+    applyGarbage();
+  }
+  if (G.over) return;
+  spawn();
+  if (!G.over) sendState();
+}
+function applyGarbage(){
+  let budget=8;
+  while (G.pending.length && budget>0) {
+    const p=G.pending[0], k=Math.min(p.n,budget);
+    for (let i=0;i<k;i++) {
+      const top=G.board.shift();
+      if (top.some(v=>v)) G.topped=true;
+      const row=new Array(COLS).fill(8); row[p.hole]=0; G.board.push(row);
+    }
+    p.n-=k; budget-=k; if (p.n===0) G.pending.shift();
+  }
+  if (G.topped) die();
+}
+function die(){
+  if (G.over) return;
+  G.over=true; lastResult='lose'; phase='idle';
+  send({t:'dead'}); sendState(); updateOverlay();
+}
+
+/* ===================== 入力 ===================== */
+const input = {left:false,right:false,soft:false,dir:null,dasT:0,arrT:0,das:false};
+const DAS=140, ARR=35;
+function setDir(d){ input.dir=d; input.dasT=0; input.arrT=0; input.das=false; }
+function playable(){ return phase==='playing' && G && !G.over; }
+function press(k){
+  if (!playable()) return;
+  switch(k){
+    case 'left':  input.left=true;  setDir('left');  move(-1); break;
+    case 'right': input.right=true; setDir('right'); move(1);  break;
+    case 'down':  input.soft=true; break;
+    case 'cw': rotate(1); break;
+    case 'ccw': rotate(-1); break;
+    case 'hard': hardDrop(); break;
+    case 'hold': holdPiece(); break;
+  }
+}
+function release(k){
+  if (k==='left'){ input.left=false; if (input.dir==='left') setDir(input.right?'right':null); }
+  else if (k==='right'){ input.right=false; if (input.dir==='right') setDir(input.left?'left':null); }
+  else if (k==='down'){ input.soft=false; }
+}
+function resetInput(){ input.left=input.right=input.soft=false; setDir(null); }
+
+const KEYMAP = {ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right',ArrowDown:'down',s:'down',S:'down',
+  ArrowUp:'cw',x:'cw',X:'cw',w:'cw',W:'cw',z:'ccw',Z:'ccw',' ':'hard',c:'hold',C:'hold',Shift:'hold'};
+addEventListener('keydown',e=>{
+  if (phase!=='playing' && phase!=='countdown') return;
+  const k=KEYMAP[e.key]; if(!k) return;
+  e.preventDefault();
+  if (!e.repeat) press(k);
+});
+addEventListener('keyup',e=>{ const k=KEYMAP[e.key]; if(k) release(k); });
+addEventListener('blur',resetInput);
+
+document.querySelectorAll('#touch button').forEach(b=>{
+  const k=b.dataset.k;
+  b.addEventListener('pointerdown',e=>{e.preventDefault();b.classList.add('on');press(k);});
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>{b.classList.remove('on');release(k);}));
+  b.addEventListener('contextmenu',e=>e.preventDefault());
+});
+
+/* ===================== 更新ループ ===================== */
+function gravityInterval(){
+  const level=Math.min(15,1+Math.floor(G.t/25000));
+  return Math.max(60,1000*Math.pow(0.8,level-1));
+}
+function update(dt){
+  G.t+=dt;
+  if (input.dir) {
+    input.dasT+=dt;
+    if (!input.das && input.dasT>=DAS){input.das=true;input.arrT=0;}
+    if (input.das) {
+      input.arrT+=dt;
+      while (input.arrT>=ARR){ input.arrT-=ARR; const dx=input.dir==='left'?-1:1; if (!tryMove(dx,0)) {input.arrT=0;break;} afterShift(); }
+    }
+  }
+  const gi=gravityInterval(), iv=input.soft?Math.min(gi,45):gi;
+  G.gravT+=dt;
+  while (G.gravT>=iv) { G.gravT-=iv; if (!tryMove(0,1)) { G.gravT=0; break; } }
+  if (onGround()) { G.lockT+=dt; if (G.lockT>=500 || G.resets>=15 && G.lockT>=100) { lockPiece(); return; } }
+  else G.lockT=0;
+  G.sendT+=dt;
+  if (G.sendT>=100) sendState();
+}
+
+/* ===================== 通信（WebRTC） ===================== */
+const ICE={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]};
+function send(o){ if (dc && dc.readyState==='open') { try{dc.send(JSON.stringify(o));}catch(e){} } }
+function sendState(){
+  if (!G) return;
+  G.sendT=0;
+  send({t:'s', b:G.board.map(r=>r.join('')).join(''), k:[TYPES.indexOf(G.cur.t),G.cur.rot,G.cur.x,G.cur.y], p:pendingTotal(), over:G.over});
+}
+function onMsg(raw){
+  let m; try{m=JSON.parse(raw);}catch(e){return;}
+  if (!m || typeof m!=='object') return;
+  switch(m.t){
+    case 'ready': oppReady=true; updateOverlay(); checkStart(); break;
+    case 'start': if (!isHost && Number.isFinite(m.seed)) begin(m.seed>>>0); break;
+    case 's':
+      if (typeof m.b==='string' && m.b.length===ROWS*COLS && Array.isArray(m.k)) OPP={b:m.b,k:m.k,p:Math.max(0,m.p|0),over:!!m.over};
+      break;
+    case 'g':
+      if (G && phase==='playing' && !G.over) {
+        const n=Math.max(1,Math.min(20,m.n|0)), hole=Math.max(0,Math.min(COLS-1,m.hole|0));
+        G.pending.push({n,hole});
+      }
+      break;
+    case 'dead':
+      if (G && phase==='playing' && !G.over) { G.over=true; lastResult='win'; phase='idle'; resetInput(); updateOverlay(); }
+      break;
+  }
+}
+function setupDC(ch){
+  ch.onopen=()=>enterGame();
+  ch.onmessage=e=>onMsg(e.data);
+  ch.onclose=()=>handleClosed();
+}
+function handleClosed(){
+  if (phase==='lobby') return;
+  phase='idle'; lastResult='closed'; if (G) G.over=true; resetInput(); updateOverlay();
+}
+function makePC(){
+  const p=new RTCPeerConnection(ICE);
+  p.onconnectionstatechange=()=>{
+    if (p.connectionState==='failed' && phase==='lobby') lobbyMsg('接続に失敗しました。回線の組み合わせによってはP2P接続できないことがあります（Wi-Fiで試す／コードを作り直す）。');
+  };
+  return p;
+}
+function waitIce(p){
+  return new Promise(res=>{
+    if (p.iceGatheringState==='complete') return res();
+    const t=setTimeout(done,6000);
+    function chk(){ if (p.iceGatheringState==='complete') done(); }
+    function done(){ clearTimeout(t); p.removeEventListener('icegatheringstatechange',chk); res(); }
+    p.addEventListener('icegatheringstatechange',chk);
+  });
+}
+const b64e=u8=>{let s='';for(let i=0;i<u8.length;i++)s+=String.fromCharCode(u8[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
+const b64d=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;};
+async function pipe(bytes,stream){const w=stream.writable.getWriter();w.write(bytes);w.close();return new Uint8Array(await new Response(stream.readable).arrayBuffer());}
+async function encodeDesc(d){
+  let bytes=new TextEncoder().encode(JSON.stringify({type:d.type,sdp:d.sdp})), pre='r.';
+  if (window.CompressionStream){ bytes=await pipe(bytes,new CompressionStream('deflate-raw')); pre='z.'; }
+  return pre+b64e(bytes);
+}
+async function decodeDesc(str){
+  str=str.replace(/\s+/g,'');
+  const pre=str.slice(0,2); let bytes=b64d(str.slice(2));
+  if (pre==='z.') bytes=await pipe(bytes,new DecompressionStream('deflate-raw'));
+  else if (pre!=='r.') throw new Error('bad prefix');
+  const d=JSON.parse(new TextDecoder().decode(bytes));
+  if (!d || (d.type!=='offer'&&d.type!=='answer') || typeof d.sdp!=='string') throw new Error('bad desc');
+  return d;
+}
+
+/* ===================== ロビーUI ===================== */
+const $=id=>document.getElementById(id);
+function lobbyMsg(t){ $('lobbyMsg').textContent=t||''; }
+async function copyFrom(ta,btn){
+  try{ await navigator.clipboard.writeText(ta.value); }catch(e){ ta.select(); try{document.execCommand('copy');}catch(_){} }
+  const o=btn.textContent; btn.textContent='コピーしました ✓'; setTimeout(()=>btn.textContent=o,1500);
+}
+async function pasteInto(ta){
+  try{ ta.value=await navigator.clipboard.readText(); }catch(e){ lobbyMsg('自動貼り付けできませんでした。テキスト欄を長押しして貼り付けてください。'); }
+}
+function shareBtn(btn,ta){
+  if (!navigator.share) return;
+  btn.hidden=false;
+  btn.onclick=()=>navigator.share({text:ta.value}).catch(()=>{});
+}
+$('btnHost').onclick=async()=>{
+  isHost=true; $('lobbyMain').hidden=true; $('hostFlow').hidden=false; $('lobbyNote').hidden=false; lobbyMsg('');
+  try{
+    pc=makePC(); dc=pc.createDataChannel('tetris'); setupDC(dc);
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitIce(pc);
+    $('offerOut').value=await encodeDesc(pc.localDescription);
+    shareBtn($('offerShare'),$('offerOut'));
+  }catch(e){ lobbyMsg('コードの生成に失敗しました：'+e.message); }
+};
+$('btnGuest').onclick=()=>{ isHost=false; $('lobbyMain').hidden=true; $('guestFlow').hidden=false; $('lobbyNote').hidden=false; lobbyMsg(''); };
+$('offerCopy').onclick=()=>copyFrom($('offerOut'),$('offerCopy'));
+$('answerCopy').onclick=()=>copyFrom($('answerOut'),$('answerCopy'));
+$('answerPaste').onclick=()=>pasteInto($('answerIn'));
+$('offerPaste').onclick=()=>pasteInto($('offerIn'));
+$('btnConnect').onclick=async()=>{
+  lobbyMsg('');
+  try{ await pc.setRemoteDescription(await decodeDesc($('answerIn').value)); lobbyMsg('接続中…'); $('lobbyMsg').style.color='#9aa4d0'; }
+  catch(e){ $('lobbyMsg').style.color=''; lobbyMsg('コードが正しくありません。コピーし直してください。'); }
+};
+$('btnMakeAnswer').onclick=async()=>{
+  lobbyMsg('');
+  const btn=$('btnMakeAnswer'); btn.disabled=true;
+  try{
+    const offer=await decodeDesc($('offerIn').value);
+    if (offer.type!=='offer') throw new Error('not offer');
+    pc=makePC(); pc.ondatachannel=e=>{dc=e.channel;setupDC(dc);};
+    await pc.setRemoteDescription(offer);
+    await pc.setLocalDescription(await pc.createAnswer());
+    await waitIce(pc);
+    $('answerOut').value=await encodeDesc(pc.localDescription);
+    $('answerCard').hidden=false; shareBtn($('answerShare'),$('answerOut'));
+  }catch(e){ lobbyMsg('コードが正しくありません。ホストのコードをコピーし直してください。'); }
+  btn.disabled=false;
+};
+
+/* ===================== 対戦開始・オーバーレイ ===================== */
+function enterGame(){
+  $('lobby').hidden=true; $('game').hidden=false;
+  phase='idle'; lastResult=null; firstRound=true; myReady=oppReady=false;
+  resize(); updateOverlay();
+}
+function checkStart(){
+  if (isHost && myReady && oppReady && phase==='idle') {
+    const seed=(Math.random()*4294967296)>>>0;
+    send({t:'start',seed}); begin(seed);
+  }
+}
+function begin(seed){
+  myReady=oppReady=false; firstRound=false; lastResult=null; OPP=null;
+  resetInput(); newRound(seed); phase='countdown'; updateOverlay();
+}
+function updateOverlay(){
+  const ov=$('overlay');
+  if (phase!=='idle') { ov.hidden=true; return; }
+  ov.hidden=false;
+  const t=$('ovTitle'), s=$('ovSub'), b=$('ovBtn');
+  b.hidden=false;
+  if (lastResult==='closed') {
+    t.textContent='切断されました'; s.textContent='相手との接続が切れました。'; b.textContent='最初に戻る'; b.disabled=false; b.onclick=()=>location.reload(); return;
+  }
+  t.textContent = lastResult==='win' ? '🎉 勝ち！' : lastResult==='lose' ? '💀 負け…' : '接続完了！';
+  s.textContent = '相手：' + (oppReady ? '準備OK' : '待機中');
+  b.textContent = myReady ? '相手を待っています…' : (firstRound ? '準備OK' : 'もう一度');
+  b.disabled = myReady;
+  b.onclick=()=>{ if (myReady) return; myReady=true; send({t:'ready'}); updateOverlay(); checkStart(); };
+}
+
+/* ===================== 描画 ===================== */
+const cv=$('cv'), ctx=cv.getContext('2d');
+const W=22.6, H=21.7, BX=4.6, BY=1.4, OX=15.9, OS=0.6;
+let u=16, dpr=1;
+const coarse=matchMedia('(pointer:coarse)').matches;
+function resize(){
+  const st=$('stage'); const w=st.clientWidth, h=st.clientHeight;
+  if (!w||!h) return;
+  u=Math.max(8,Math.min(w/W,h/H)); dpr=window.devicePixelRatio||1;
+  cv.style.width=(W*u)+'px'; cv.style.height=(H*u)+'px';
+  cv.width=Math.round(W*u*dpr); cv.height=Math.round(H*u*dpr);
+}
+addEventListener('resize',resize);
+function text(str,x,y,size,color,align){
+  ctx.save(); ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.font='700 '+(size*u)+'px system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif';
+  ctx.fillStyle=color||'#9aa4d0'; ctx.textAlign=align||'left'; ctx.textBaseline='alphabetic';
+  ctx.fillText(str,x*u,y*u); ctx.restore();
+}
+function block(x,y,s,col,alpha){
+  ctx.globalAlpha=alpha==null?1:alpha;
+  ctx.fillStyle=col; ctx.fillRect(x,y,s,s);
+  ctx.fillStyle='rgba(255,255,255,.28)'; ctx.fillRect(x,y,s,s*.14); ctx.fillRect(x,y,s*.14,s);
+  ctx.fillStyle='rgba(0,0,0,.28)'; ctx.fillRect(x,y+s*.86,s,s*.14); ctx.fillRect(x+s*.86,y,s*.14,s);
+  ctx.globalAlpha=1;
+}
+function boardBg(x,y,s){
+  ctx.fillStyle='#0e1530'; ctx.fillRect(x,y,COLS*s,VIS*s);
+  ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=0.02;
+  ctx.beginPath();
+  for (let i=1;i<COLS;i++){ctx.moveTo(x+i*s,y);ctx.lineTo(x+i*s,y+VIS*s);}
+  for (let j=1;j<VIS;j++){ctx.moveTo(x,y+j*s);ctx.lineTo(x+COLS*s,y+j*s);}
+  ctx.stroke();
+  ctx.strokeStyle='#2a3566'; ctx.lineWidth=0.06; ctx.strokeRect(x,y,COLS*s,VIS*s);
+}
+function preview(t,bx,by,bw,bh,s,dim){
+  if (!t) return;
+  const cells=SHAPES[t][0];
+  let r0=9,r1=-1,c0=9,c1=-1;
+  for (const [r,c] of cells){r0=Math.min(r0,r);r1=Math.max(r1,r);c0=Math.min(c0,c);c1=Math.max(c1,c);}
+  const w=(c1-c0+1)*s, h=(r1-r0+1)*s, ox=bx+(bw-w)/2, oy=by+(bh-h)/2;
+  for (const [r,c] of cells) block(ox+(c-c0)*s,oy+(r-r0)*s,s-0.03,COLORS[t],dim?.4:1);
+}
+function render(){
+  ctx.setTransform(dpr*u,0,0,dpr*u,0,0);
+  ctx.clearRect(0,0,W,H);
+
+  /* 左パネル */
+  text('HOLD',0.3,1.15,0.7);
+  ctx.fillStyle='#0e1530'; ctx.fillRect(0.3,BY,4,3); ctx.strokeStyle='#2a3566'; ctx.lineWidth=0.05; ctx.strokeRect(0.3,BY,4,3);
+  if (G) preview(G.hold,0.3,BY,4,3,0.8,G.hold && !G.canHold);
+  text('NEXT',0.3,BY+4.0,0.7);
+  for (let i=0;i<3;i++){
+    const y=BY+4.3+i*2.9;
+    ctx.fillStyle='#0e1530'; ctx.fillRect(0.3,y,4,2.7); ctx.strokeStyle='#2a3566'; ctx.strokeRect(0.3,y,4,2.7);
+    if (G) preview(G.queue[i],0.3,y,4,2.7,0.8);
+  }
+
+  /* 自分の盤面 */
+  text('YOU',BX,1.15,0.7);
+  boardBg(BX,BY,1);
+  if (G) {
+    for (let r=HID;r<ROWS;r++) for (let c=0;c<COLS;c++){
+      const v=G.board[r][c]; if (v) block(BX+c,BY+r-HID,0.97,colorOf(v));
+    }
+    if (!G.over || phase!=='idle') {
+      const cu=G.cur;
+      if (cu && !G.over) {
+        const gy=ghostY();
+        for (const [r,c] of SHAPES[cu.t][cu.rot]) { const yy=gy+r-HID; if (yy>=0) block(BX+cu.x+c,BY+yy,0.97,COLORS[cu.t],.25); }
+        for (const [r,c] of SHAPES[cu.t][cu.rot]) { const yy=cu.y+r-HID; if (yy>=0) block(BX+cu.x+c,BY+yy,0.97,COLORS[cu.t]); }
+      }
+    }
+    // お邪魔バー
+    const p=Math.min(VIS,pendingTotal());
+    ctx.fillStyle='#1b2347'; ctx.fillRect(BX+10.2,BY,0.4,VIS);
+    ctx.fillStyle='#ef4444'; ctx.fillRect(BX+10.2,BY+VIS-p,0.4,p);
+    if (phase==='countdown') {
+      text(String(Math.max(1,Math.ceil(G.cd/1000))),BX+5,BY+11,4,'#ffffff','center');
+    }
+  } else {
+    ctx.fillStyle='#1b2347'; ctx.fillRect(BX+10.2,BY,0.4,VIS);
+  }
+
+  /* 相手の盤面 */
+  text('OPPONENT',OX,1.15,0.7);
+  boardBg(OX,BY,OS);
+  if (OPP) {
+    for (let r=HID;r<ROWS;r++) for (let c=0;c<COLS;c++){
+      const v=OPP.b.charCodeAt(r*COLS+c)-48; if (v>0&&v<=8) block(OX+c*OS,BY+(r-HID)*OS,OS-0.03,colorOf(v));
+    }
+    const [ti,rot,x,y]=OPP.k;
+    if (TYPES[ti] && SHAPES[TYPES[ti]][rot&3] && !OPP.over) {
+      for (const [r,c] of SHAPES[TYPES[ti]][rot&3]) { const yy=y+r-HID; if (yy>=0) block(OX+(x+c)*OS,BY+yy*OS,OS-0.03,COLORS[TYPES[ti]]); }
+    }
+  }
+  const op=Math.min(VIS,OPP?OPP.p:0)*OS;
+  ctx.fillStyle='#1b2347'; ctx.fillRect(OX+COLS*OS+0.2,BY,0.3,VIS*OS);
+  ctx.fillStyle='#ef4444'; ctx.fillRect(OX+COLS*OS+0.2,BY+VIS*OS-op,0.3,op);
+
+  /* 統計・操作ヒント */
+  if (G) {
+    text('送ったお邪魔  '+G.sent,OX,BY+13.1,0.65,'#e6e9f5');
+    text('消したライン  '+G.lines,OX,BY+14.0,0.65,'#e6e9f5');
+  }
+  if (!coarse) {
+    const hints=['← →　移動','↓　ソフトドロップ','↑ / X　右回転','Z　左回転','Space　ハードドロップ','C / Shift　ホールド'];
+    hints.forEach((h,i)=>text(h,OX,BY+15.6+i*0.8,0.6,'#6b76a8'));
+  }
+}
+
+function frame(now){
+  const dt=Math.min(50,now-frame.last); frame.last=now;
+  if (G) {
+    if (phase==='countdown') { G.cd-=dt; if (G.cd<=0){G.cd=0;phase='playing';} }
+    else if (phase==='playing' && !G.over) update(dt);
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+frame.last=performance.now();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
