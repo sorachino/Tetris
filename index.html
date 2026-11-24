@@ -31,6 +31,11 @@ textarea{width:100%;height:96px;border-radius:10px;border:1px solid var(--line);
 input.code{width:100%;border-radius:10px;border:1px solid var(--line);background:#0b1020;color:var(--text);padding:12px;font-size:22px;letter-spacing:.3em;text-align:center;text-transform:uppercase;margin-bottom:8px}
 #lobbyMsg{color:#fca5a5;font-size:13px;min-height:20px;margin-top:8px;line-height:1.5}
 .note{font-size:12px;color:var(--sub);line-height:1.6}
+.hc{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;align-items:center;margin-top:6px}
+.hc .who{grid-column:1/-1;font-size:13px;font-weight:700;margin-top:6px}
+.hc label{font-size:12px;color:var(--sub)}
+.hc select{width:100%;margin-top:3px;border-radius:10px;border:1px solid var(--line);background:#0b1020;color:var(--text);padding:10px;font-size:15px}
+#ovHc{font-size:13px;color:var(--sub);line-height:1.7;white-space:pre-line}
 
 #game{display:flex;flex-direction:column}
 #stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
@@ -79,7 +84,7 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
     </div>
     <div class="card">
       <h3>ルール</h3>
-      <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、自分が消去すれば相殺できます。</p>
+      <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、自分が消去すれば相殺できます。<br>ハンデ：部屋を作る人が、プレイヤーごとに「送るお邪魔の倍率」と「開始時のお邪魔ライン」を設定できます（対戦前に両方へ表示されます）。</p>
     </div>
   </div>
 
@@ -93,6 +98,18 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
         <button class="btn sec" id="codeShare" hidden>共有</button>
       </div>
     </div>
+    <div class="card">
+      <h3>ハンデ設定</h3>
+      <p>倍率は「そのプレイヤーが送るお邪魔の量」にかかります（0.5なら半分）。開始時のお邪魔は、対戦開始時に盤面の下に積まれる段数です。相手が入る前に決めてください（対戦開始後は変更できません）。</p>
+      <div class="hc">
+        <div class="who">あなた（ホスト）</div>
+        <div><label for="hcHm">送るお邪魔の倍率</label><select id="hcHm"></select></div>
+        <div><label for="hcHs">開始時のお邪魔</label><select id="hcHs"></select></div>
+        <div class="who">相手（ゲスト）</div>
+        <div><label for="hcGm">送るお邪魔の倍率</label><select id="hcGm"></select></div>
+        <div><label for="hcGs">開始時のお邪魔</label><select id="hcGs"></select></div>
+      </div>
+    </div>
   </div>
 
   <div id="lobbyMsg"></div>
@@ -104,6 +121,7 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
     <div id="overlay" hidden>
       <div id="ovTitle"></div>
       <div id="ovSub"></div>
+      <div id="ovHc"></div>
       <button class="btn" id="ovBtn"></button>
     </div>
   </div>
@@ -173,16 +191,37 @@ let G = null, OPP = null;
 let myReady = false, oppReady = false, lastResult = null, firstRound = true;
 let isHost = false;
 
+/* ===================== ハンデ ===================== */
+// m: 自分が送るお邪魔の倍率 / s: 開始時に盤面の下へ積むお邪魔の段数（ホスト・ゲストそれぞれ）
+const HC_MULTS = [0.25,0.5,0.75,1,1.25,1.5,2,3], HC_MAXS = 8;
+let HC = { h:{m:1,s:0}, g:{m:1,s:0} };
+function cleanSide(o){
+  const m = Number(o && o.m), s = Number(o && o.s);
+  return { m: HC_MULTS.includes(m) ? m : 1, s: Number.isInteger(s) ? Math.max(0,Math.min(HC_MAXS,s)) : 0 };
+}
+function cleanHc(h){ return { h:cleanSide(h && h.h), g:cleanSide(h && h.g) }; }
+const myHc  = () => isHost ? HC.h : HC.g;
+const oppHc = () => isHost ? HC.g : HC.h;
+const hcLabel = c => '送るお邪魔 ×'+c.m+'　開始時 +'+c.s+'段';
+const hcIsDefault = () => [HC.h,HC.g].every(c=>c.m===1&&c.s===0);
+
 const emptyBoard = () => Array.from({length:ROWS},()=>new Array(COLS).fill(0));
 
 function newRound(seed){
   G = {
     board: emptyBoard(), rng: mulberry32(seed), bag: [], queue: [], cur: null, hold: null, canHold: true,
     pending: [], combo: -1, gravT: 0, lockT: 0, resets: 0, lowest: 0, t: 0, sendT: 0,
-    over: false, cd: 3000, sent: 0, lines: 0, topped: false,
+    over: false, cd: 3000, sent: 0, lines: 0, topped: false, carry: 0,
   };
+  addStartGarbage(myHc().s);
   fillQueue();
   spawn();
+}
+function addStartGarbage(n){
+  for (let i=0;i<n;i++) {
+    const row=new Array(COLS).fill(8); row[Math.floor(Math.random()*COLS)]=0;
+    G.board.shift(); G.board.push(row);
+  }
 }
 function fillQueue(){
   while (G.queue.length < 6) {
@@ -256,6 +295,7 @@ function lockPiece(){
     let atk = ATK[Math.min(cleared,4)];
     if (G.combo>0) atk += Math.min(4, Math.ceil(G.combo/2));
     if (G.board.every(row=>row.every(v=>!v))) atk += 6;
+    { const tot=atk*myHc().m+G.carry; atk=Math.floor(tot+1e-9); G.carry=tot-atk; }   // ハンデ倍率（端数は次回に持ち越し）
     while (atk>0 && G.pending.length) {           // 相殺
       const p=G.pending[0], d=Math.min(atk,p.n);
       p.n-=d; atk-=d; if (p.n===0) G.pending.shift();
@@ -371,13 +411,14 @@ function onMsg(raw){
   if (!m || typeof m!=='object') return;
   switch(m.t){
     case 'ready': oppReady=true; updateOverlay(); checkStart(); break;
-    case 'start': if (!isHost && Number.isFinite(m.seed)) begin(m.seed>>>0); break;
+    case 'hc': if (!isHost) { HC=cleanHc(m.hc); updateOverlay(); } break;
+    case 'start': if (!isHost && Number.isFinite(m.seed)) { HC=cleanHc(m.hc); begin(m.seed>>>0); } break;
     case 's':
       if (typeof m.b==='string' && m.b.length===ROWS*COLS && Array.isArray(m.k)) OPP={b:m.b,k:m.k,p:Math.max(0,m.p|0),over:!!m.over};
       break;
     case 'g':
       if (G && phase==='playing' && !G.over) {
-        const n=Math.max(1,Math.min(20,m.n|0)), hole=Math.max(0,Math.min(COLS-1,m.hole|0));
+        const n=Math.max(1,Math.min(40,m.n|0)), hole=Math.max(0,Math.min(COLS-1,m.hole|0));
         G.pending.push({n,hole});
       }
       break;
@@ -439,6 +480,16 @@ async function openServer(){
   catch(e){ lobbyMsg('サーバーに接続できませんでした。少し待ってからもう一度試してください。'); return false; }
   finally{ $('btnHost').disabled=$('btnJoin').disabled=false; }
 }
+function fillSelect(id,vals,def,fmt){
+  const el=$(id); el.innerHTML='';
+  vals.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=fmt(v); if(v===def) o.selected=true; el.appendChild(o); });
+}
+const MULT_FMT=v=>'×'+v+(v===1?'（ハンデなし）':''), START_FMT=v=>v===0?'なし':v+'段';
+['hcHm','hcGm'].forEach(id=>fillSelect(id,HC_MULTS,1,MULT_FMT));
+['hcHs','hcGs'].forEach(id=>fillSelect(id,Array.from({length:HC_MAXS+1},(_,i)=>i),0,START_FMT));
+function readHcUi(){
+  HC=cleanHc({h:{m:$('hcHm').value,s:$('hcHs').value},g:{m:$('hcGm').value,s:$('hcGs').value}});
+}
 function inviteLink(){ return location.origin+location.pathname+'?r='+roomCode; }
 $('btnHost').onclick=async()=>{ if(!await openServer()) return; isHost=true; ws.send(JSON.stringify({t:'create'})); };
 $('btnJoin').onclick=async()=>{
@@ -457,6 +508,7 @@ $('codeShare').onclick=()=>navigator.share({text:'テトリス対戦しよう！
 
 /* ===================== 対戦開始・オーバーレイ ===================== */
 function enterGame(){
+  if (isHost) { readHcUi(); send({t:'hc',hc:HC}); }
   $('lobby').hidden=true; $('game').hidden=false;
   phase='idle'; lastResult=null; firstRound=true; myReady=oppReady=false;
   resize(); updateOverlay();
@@ -464,7 +516,7 @@ function enterGame(){
 function checkStart(){
   if (isHost && myReady && oppReady && phase==='idle') {
     const seed=(Math.random()*4294967296)>>>0;
-    send({t:'start',seed}); begin(seed);
+    send({t:'start',seed,hc:HC}); begin(seed);
   }
 }
 function begin(seed){
@@ -482,6 +534,7 @@ function updateOverlay(){
   }
   t.textContent = lastResult==='win' ? '🎉 勝ち！' : lastResult==='lose' ? '💀 負け…' : '接続完了！';
   s.textContent = '相手：' + (oppReady ? '準備OK' : '待機中');
+  $('ovHc').textContent = hcIsDefault() ? '' : 'ハンデ\nあなた：'+hcLabel(myHc())+'\n相手　：'+hcLabel(oppHc());
   b.textContent = myReady ? '相手を待っています…' : (firstRound ? '準備OK' : 'もう一度');
   b.disabled = myReady;
   b.onclick=()=>{ if (myReady) return; myReady=true; send({t:'ready'}); updateOverlay(); checkStart(); };
@@ -588,13 +641,18 @@ function render(){
   ctx.fillStyle='#ef4444'; ctx.fillRect(OX+COLS*OS+0.2,BY+VIS*OS-op,0.3,op);
 
   /* 統計・操作ヒント */
+  if (!hcIsDefault()) {
+    text('ハンデ（送る倍率／開始段）',OX,BY+12.7,0.5,'#fbbf24');
+    text('YOU  ×'+myHc().m+'  +'+myHc().s+'段',OX,BY+13.4,0.6,'#e6e9f5');
+    text('OPP  ×'+oppHc().m+'  +'+oppHc().s+'段',OX,BY+14.1,0.6,'#e6e9f5');
+  }
   if (G) {
-    text('送ったお邪魔  '+G.sent,OX,BY+13.1,0.65,'#e6e9f5');
-    text('消したライン  '+G.lines,OX,BY+14.0,0.65,'#e6e9f5');
+    text('送ったお邪魔  '+G.sent,OX,BY+15.2,0.65,'#e6e9f5');
+    text('消したライン  '+G.lines,OX,BY+16.0,0.65,'#e6e9f5');
   }
   if (!coarse) {
     const hints=['← →　移動','↓　ソフトドロップ','↑ / X　右回転','Z　左回転','Space　ハードドロップ','C / Shift　ホールド'];
-    hints.forEach((h,i)=>text(h,OX,BY+15.6+i*0.8,0.6,'#6b76a8'));
+    hints.forEach((h,i)=>text(h,OX,BY+16.9+i*0.64,0.55,'#6b76a8'));
   }
 }
 
