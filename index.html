@@ -40,13 +40,27 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
 #ovTitle{font-size:34px;font-weight:800}
 #ovSub{color:var(--sub);font-size:14px}
 #ovBtn{width:auto;min-width:220px}
-#touch{display:none;gap:10px;padding:8px 10px calc(10px + env(safe-area-inset-bottom));touch-action:none}
+#touch{display:none;justify-content:space-between;align-items:center;padding:6px 14px calc(12px + env(safe-area-inset-bottom));touch-action:none;
+  --b:min(17vw,14vh,72px)}
 @media (pointer:coarse){#touch{display:flex}}
-.pad{display:flex;gap:6px}
-.pad.l{flex:3}.pad.r{flex:4}
-.pad button{flex:1;height:64px;border:0;border-radius:14px;background:#26305a;color:#e6e9f5;font-size:20px;font-weight:700;touch-action:none}
-.pad button:active,.pad button.on{background:var(--accent)}
-.pad button.sm{font-size:12px}
+.dpad,.abxy{display:grid;grid-template-columns:repeat(3,var(--b));grid-template-rows:repeat(3,var(--b));gap:0}
+#touch button{border:0;color:#e6e9f5;font-weight:800;font-size:calc(var(--b)*.36);touch-action:none;-webkit-user-select:none;user-select:none;
+  box-shadow:inset 0 -3px 0 rgba(0,0,0,.35)}
+.dpad button{background:#2b3563;border-radius:10px}
+.dpad button:active,.dpad button.on{background:var(--accent)}
+.dpad .u{grid-area:1/2;border-radius:14px 14px 4px 4px}
+.dpad .l{grid-area:2/1;border-radius:14px 4px 4px 14px}
+.dpad .r{grid-area:2/3;border-radius:4px 14px 14px 4px}
+.dpad .d{grid-area:3/2;border-radius:4px 4px 14px 14px}
+.dpad .c{grid-area:2/2;background:#2b3563;border-radius:0;position:relative}
+.dpad .c::after{content:"";position:absolute;inset:28%;border-radius:50%;background:#1d2547}
+.abxy button{width:calc(var(--b)*.92);height:calc(var(--b)*.92);border-radius:50%;place-self:center}
+.abxy .t{grid-area:1/2;background:#3b82f6}
+.abxy .l{grid-area:2/1;background:#22c55e}
+.abxy .r{grid-area:2/3;background:#ef4444}
+.abxy .d{grid-area:3/2;background:#eab308;color:#1a1a1a}
+.abxy button:active,.abxy button.on{filter:brightness(1.35);transform:scale(.94)}
+.abxy .sm{font-size:calc(var(--b)*.2)}
 </style>
 </head>
 <body>
@@ -93,16 +107,18 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
     </div>
   </div>
   <div id="touch">
-    <div class="pad l">
-      <button data-k="left">◀</button>
-      <button data-k="down">▼</button>
-      <button data-k="right">▶</button>
+    <div class="dpad">
+      <button class="u" data-k="hard">▲</button>
+      <button class="l" data-k="left">◀</button>
+      <div class="c"></div>
+      <button class="r" data-k="right">▶</button>
+      <button class="d" data-k="down">▼</button>
     </div>
-    <div class="pad r">
-      <button data-k="hold" class="sm">HOLD</button>
-      <button data-k="ccw">↺</button>
-      <button data-k="cw">↻</button>
-      <button data-k="hard">⤓</button>
+    <div class="abxy">
+      <button class="t sm" data-k="hold">HOLD</button>
+      <button class="l sm" data-k="hard">DROP</button>
+      <button class="r" data-k="cw">↻</button>
+      <button class="d" data-k="ccw">↺</button>
     </div>
   </div>
 </div>
