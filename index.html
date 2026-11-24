@@ -27,6 +27,8 @@ textarea{width:100%;height:96px;border-radius:10px;border:1px solid var(--line);
 .row{display:flex;gap:8px;margin-top:8px}
 .row .btn{padding:10px 12px;font-size:14px}
 .row .btn+.btn{margin-top:0}
+#roomCode{font-size:56px;font-weight:800;letter-spacing:.2em;text-align:center;padding:10px 0 10px .2em;font-family:ui-monospace,Menlo,monospace}
+input.code{width:100%;border-radius:10px;border:1px solid var(--line);background:#0b1020;color:var(--text);padding:12px;font-size:22px;letter-spacing:.3em;text-align:center;text-transform:uppercase;margin-bottom:8px}
 #lobbyMsg{color:#fca5a5;font-size:13px;min-height:20px;margin-top:8px;line-height:1.5}
 .note{font-size:12px;color:var(--sub);line-height:1.6}
 
@@ -51,11 +53,15 @@ textarea{width:100%;height:96px;border-radius:10px;border:1px solid var(--line);
 
 <div id="lobby" class="screen">
   <h1>対戦テトリス</h1>
-  <p class="lead">2人用オンライン対戦。サーバー不要（P2P通信）。接続コードを2人で交換するだけで遊べます。</p>
+  <p class="lead">2人用オンライン対戦。部屋コードを相手に伝えるだけで遊べます（Wi-Fi・モバイル回線どちらもOK）。</p>
 
   <div id="lobbyMain">
-    <button class="btn" id="btnHost">部屋を作る（ホスト）</button>
-    <button class="btn sec" id="btnGuest">部屋に入る（ゲスト）</button>
+    <button class="btn" id="btnHost">部屋を作る</button>
+    <div class="card">
+      <h3>部屋に入る</h3>
+      <input class="code" id="codeIn" maxlength="4" placeholder="部屋コード" autocomplete="off" autocapitalize="characters">
+      <button class="btn sec" id="btnJoin">入る</button>
+    </div>
     <div class="card">
       <h3>ルール</h3>
       <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、自分が消去すれば相殺できます。</p>
@@ -64,46 +70,17 @@ textarea{width:100%;height:96px;border-radius:10px;border:1px solid var(--line);
 
   <div id="hostFlow" hidden>
     <div class="card">
-      <h3>① このコードを相手に送る</h3>
-      <p>LINEなどで相手に送ってください。</p>
-      <textarea id="offerOut" readonly placeholder="生成中…"></textarea>
+      <h3>部屋コード</h3>
+      <div id="roomCode">----</div>
+      <p>このコード（またはリンク）を相手に送ってください。相手が入ると自動で対戦画面に切り替わります。</p>
       <div class="row">
-        <button class="btn sec" id="offerCopy">コピー</button>
-        <button class="btn sec" id="offerShare" hidden>共有</button>
-      </div>
-    </div>
-    <div class="card">
-      <h3>② 相手から返ってきたコードを貼る</h3>
-      <textarea id="answerIn" placeholder="相手の返信コードをここに貼り付け"></textarea>
-      <div class="row">
-        <button class="btn sec" id="answerPaste">貼り付け</button>
-        <button class="btn" id="btnConnect">接続する</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="guestFlow" hidden>
-    <div class="card">
-      <h3>① ホストのコードを貼る</h3>
-      <textarea id="offerIn" placeholder="ホストから届いたコードをここに貼り付け"></textarea>
-      <div class="row">
-        <button class="btn sec" id="offerPaste">貼り付け</button>
-        <button class="btn" id="btnMakeAnswer">返信コードを作る</button>
-      </div>
-    </div>
-    <div class="card" id="answerCard" hidden>
-      <h3>② この返信コードをホストに送る</h3>
-      <p>ホストが貼り付けて「接続する」を押すと、自動で対戦画面に切り替わります。</p>
-      <textarea id="answerOut" readonly></textarea>
-      <div class="row">
-        <button class="btn sec" id="answerCopy">コピー</button>
-        <button class="btn sec" id="answerShare" hidden>共有</button>
+        <button class="btn sec" id="codeCopy">リンクをコピー</button>
+        <button class="btn sec" id="codeShare" hidden>共有</button>
       </div>
     </div>
   </div>
 
   <div id="lobbyMsg"></div>
-  <p class="note" id="lobbyNote" hidden>※ 接続できない場合：どちらかがモバイル回線（キャリア網）だとNAT越えに失敗することがあります。Wi-Fiに切り替えるか、コードを作り直してください。</p>
 </div>
 
 <div id="game" class="screen" hidden>
@@ -177,7 +154,7 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a
 let phase = 'lobby';          // lobby | idle | countdown | playing
 let G = null, OPP = null;
 let myReady = false, oppReady = false, lastResult = null, firstRound = true;
-let isHost = false, pc = null, dc = null;
+let isHost = false;
 
 const emptyBoard = () => Array.from({length:ROWS},()=>new Array(COLS).fill(0));
 
@@ -360,9 +337,13 @@ function update(dt){
   if (G.sendT>=100) sendState();
 }
 
-/* ===================== 通信（WebRTC） ===================== */
-const ICE={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]};
-function send(o){ if (dc && dc.readyState==='open') { try{dc.send(JSON.stringify(o));}catch(e){} } }
+/* ===================== 通信（WebSocket 中継） ===================== */
+// 別ホスト（GitHub Pages等）から使う場合のみ、中継サーバーのホスト名を入れる（例: 'xxxx.onrender.com'）
+const PROD_HOST = '';
+const SERVER_HOST = PROD_HOST || location.host;
+const SERVER = (PROD_HOST ? 'wss://' : (location.protocol==='https:' ? 'wss://' : 'ws://')) + SERVER_HOST;
+let ws=null, paired=false, roomCode='';
+function send(o){ if (ws && paired && ws.readyState===1) { try{ws.send(JSON.stringify(o));}catch(e){} } }
 function sendState(){
   if (!G) return;
   G.sendT=0;
@@ -388,99 +369,74 @@ function onMsg(raw){
       break;
   }
 }
-function setupDC(ch){
-  ch.onopen=()=>enterGame();
-  ch.onmessage=e=>onMsg(e.data);
-  ch.onclose=()=>handleClosed();
-}
 function handleClosed(){
   if (phase==='lobby') return;
   phase='idle'; lastResult='closed'; if (G) G.over=true; resetInput(); updateOverlay();
 }
-function makePC(){
-  const p=new RTCPeerConnection(ICE);
-  p.onconnectionstatechange=()=>{
-    if (p.connectionState==='failed' && phase==='lobby') lobbyMsg('接続に失敗しました。回線の組み合わせによってはP2P接続できないことがあります（Wi-Fiで試す／コードを作り直す）。');
-  };
-  return p;
-}
-function waitIce(p){
-  return new Promise(res=>{
-    if (p.iceGatheringState==='complete') return res();
-    const t=setTimeout(done,6000);
-    function chk(){ if (p.iceGatheringState==='complete') done(); }
-    function done(){ clearTimeout(t); p.removeEventListener('icegatheringstatechange',chk); res(); }
-    p.addEventListener('icegatheringstatechange',chk);
+
+function connect(){
+  return new Promise((res,rej)=>{
+    let done=false;
+    const s=new WebSocket(SERVER); ws=s; paired=false;
+    const to=setTimeout(()=>{ if(!done){done=true;try{s.close();}catch(e){} rej(new Error('timeout'));} },75000);
+    s.onopen=()=>{done=true;clearTimeout(to);res(s);};
+    s.onerror=()=>{};
+    s.onclose=()=>{ clearTimeout(to); if(!done){done=true;rej(new Error('closed'));} else onWsClose(s); };
+    s.onmessage=e=>onWs(e.data);
   });
 }
-const b64e=u8=>{let s='';for(let i=0;i<u8.length;i++)s+=String.fromCharCode(u8[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
-const b64d=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;};
-async function pipe(bytes,stream){const w=stream.writable.getWriter();w.write(bytes);w.close();return new Uint8Array(await new Response(stream.readable).arrayBuffer());}
-async function encodeDesc(d){
-  let bytes=new TextEncoder().encode(JSON.stringify({type:d.type,sdp:d.sdp})), pre='r.';
-  if (window.CompressionStream){ bytes=await pipe(bytes,new CompressionStream('deflate-raw')); pre='z.'; }
-  return pre+b64e(bytes);
+function onWs(data){
+  if (typeof data!=='string') return;
+  let m; try{m=JSON.parse(data);}catch(e){return;}
+  if (!m || typeof m!=='object') return;
+  if (m.t==='left') { handleClosed(); return; }
+  if (!paired) {
+    if (m.t==='created') {
+      roomCode=String(m.code||'').slice(0,4);
+      $('lobbyMain').hidden=true; $('hostFlow').hidden=false; $('roomCode').textContent=roomCode; lobbyMsg('');
+      if (navigator.share) $('codeShare').hidden=false;
+    } else if (m.t==='paired') {
+      paired=true; enterGame();
+    } else if (m.t==='error') {
+      lobbyMsg(m.reason==='full' ? 'この部屋は満員です。' : m.reason==='busy' ? 'サーバーが混み合っています。少し待ってください。' : 'その部屋コードは見つかりません。');
+      try{ws.close();}catch(e){} ws=null;
+    }
+    return;
+  }
+  onMsg(data);
 }
-async function decodeDesc(str){
-  str=str.replace(/\s+/g,'');
-  const pre=str.slice(0,2); let bytes=b64d(str.slice(2));
-  if (pre==='z.') bytes=await pipe(bytes,new DecompressionStream('deflate-raw'));
-  else if (pre!=='r.') throw new Error('bad prefix');
-  const d=JSON.parse(new TextDecoder().decode(bytes));
-  if (!d || (d.type!=='offer'&&d.type!=='answer') || typeof d.sdp!=='string') throw new Error('bad desc');
-  return d;
+function onWsClose(s){
+  if (s!==ws) return;
+  if (phase==='lobby') { lobbyMsg('サーバーとの接続が切れました。もう一度やり直してください。'); $('lobbyMain').hidden=false; $('hostFlow').hidden=true; ws=null; }
+  else handleClosed();
 }
 
 /* ===================== ロビーUI ===================== */
 const $=id=>document.getElementById(id);
-function lobbyMsg(t){ $('lobbyMsg').textContent=t||''; }
-async function copyFrom(ta,btn){
-  try{ await navigator.clipboard.writeText(ta.value); }catch(e){ ta.select(); try{document.execCommand('copy');}catch(_){} }
-  const o=btn.textContent; btn.textContent='コピーしました ✓'; setTimeout(()=>btn.textContent=o,1500);
+function lobbyMsg(t,info){ const el=$('lobbyMsg'); el.style.color=info?'#9aa4d0':''; el.textContent=t||''; }
+async function openServer(){
+  if (location.hostname.endsWith('github.io') && !PROD_HOST) { lobbyMsg('このページには中継サーバーが設定されていません。サーバー側のURLから開いてください。'); return false; }
+  lobbyMsg('サーバーに接続中…（初回は最大1分ほどかかります）',true);
+  $('btnHost').disabled=$('btnJoin').disabled=true;
+  try{ await connect(); lobbyMsg(''); return true; }
+  catch(e){ lobbyMsg('サーバーに接続できませんでした。少し待ってからもう一度試してください。'); return false; }
+  finally{ $('btnHost').disabled=$('btnJoin').disabled=false; }
 }
-async function pasteInto(ta){
-  try{ ta.value=await navigator.clipboard.readText(); }catch(e){ lobbyMsg('自動貼り付けできませんでした。テキスト欄を長押しして貼り付けてください。'); }
-}
-function shareBtn(btn,ta){
-  if (!navigator.share) return;
-  btn.hidden=false;
-  btn.onclick=()=>navigator.share({text:ta.value}).catch(()=>{});
-}
-$('btnHost').onclick=async()=>{
-  isHost=true; $('lobbyMain').hidden=true; $('hostFlow').hidden=false; $('lobbyNote').hidden=false; lobbyMsg('');
-  try{
-    pc=makePC(); dc=pc.createDataChannel('tetris'); setupDC(dc);
-    await pc.setLocalDescription(await pc.createOffer());
-    await waitIce(pc);
-    $('offerOut').value=await encodeDesc(pc.localDescription);
-    shareBtn($('offerShare'),$('offerOut'));
-  }catch(e){ lobbyMsg('コードの生成に失敗しました：'+e.message); }
+function inviteLink(){ return location.origin+location.pathname+'?r='+roomCode; }
+$('btnHost').onclick=async()=>{ if(!await openServer()) return; isHost=true; ws.send(JSON.stringify({t:'create'})); };
+$('btnJoin').onclick=async()=>{
+  const code=$('codeIn').value.trim().toUpperCase();
+  if (code.length!==4) { lobbyMsg('4文字の部屋コードを入力してください。'); return; }
+  if(!await openServer()) return; isHost=false; ws.send(JSON.stringify({t:'join',code}));
 };
-$('btnGuest').onclick=()=>{ isHost=false; $('lobbyMain').hidden=true; $('guestFlow').hidden=false; $('lobbyNote').hidden=false; lobbyMsg(''); };
-$('offerCopy').onclick=()=>copyFrom($('offerOut'),$('offerCopy'));
-$('answerCopy').onclick=()=>copyFrom($('answerOut'),$('answerCopy'));
-$('answerPaste').onclick=()=>pasteInto($('answerIn'));
-$('offerPaste').onclick=()=>pasteInto($('offerIn'));
-$('btnConnect').onclick=async()=>{
-  lobbyMsg('');
-  try{ await pc.setRemoteDescription(await decodeDesc($('answerIn').value)); lobbyMsg('接続中…'); $('lobbyMsg').style.color='#9aa4d0'; }
-  catch(e){ $('lobbyMsg').style.color=''; lobbyMsg('コードが正しくありません。コピーし直してください。'); }
+$('codeIn').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase();});
+$('codeCopy').onclick=async()=>{
+  const txt=inviteLink()+'  部屋コード: '+roomCode, b=$('codeCopy'), o=b.textContent;
+  try{ await navigator.clipboard.writeText(txt); }catch(e){}
+  b.textContent='コピーしました ✓'; setTimeout(()=>b.textContent=o,1500);
 };
-$('btnMakeAnswer').onclick=async()=>{
-  lobbyMsg('');
-  const btn=$('btnMakeAnswer'); btn.disabled=true;
-  try{
-    const offer=await decodeDesc($('offerIn').value);
-    if (offer.type!=='offer') throw new Error('not offer');
-    pc=makePC(); pc.ondatachannel=e=>{dc=e.channel;setupDC(dc);};
-    await pc.setRemoteDescription(offer);
-    await pc.setLocalDescription(await pc.createAnswer());
-    await waitIce(pc);
-    $('answerOut').value=await encodeDesc(pc.localDescription);
-    $('answerCard').hidden=false; shareBtn($('answerShare'),$('answerOut'));
-  }catch(e){ lobbyMsg('コードが正しくありません。ホストのコードをコピーし直してください。'); }
-  btn.disabled=false;
-};
+$('codeShare').onclick=()=>navigator.share({text:'テトリス対戦しよう！ 部屋コード: '+roomCode, url:inviteLink()}).catch(()=>{});
+{ const r=new URLSearchParams(location.search).get('r'); if (r) $('codeIn').value=r.slice(0,4).toUpperCase(); }
 
 /* ===================== 対戦開始・オーバーレイ ===================== */
 function enterGame(){
