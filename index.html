@@ -60,6 +60,7 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
 .abxy .r{grid-area:2/3;background:#ef4444}
 .abxy .d{grid-area:3/2;background:#eab308;color:#1a1a1a}
 .abxy button:active,.abxy button.on{filter:brightness(1.35);transform:scale(.94)}
+.abxy svg{display:block;margin:auto;pointer-events:none}
 .abxy .sm{font-size:calc(var(--b)*.2)}
 </style>
 </head>
@@ -117,8 +118,8 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
     <div class="abxy">
       <button class="t sm" data-k="hold">HOLD</button>
       <button class="l sm" data-k="hard">DROP</button>
-      <button class="r" data-k="cw">↻</button>
-      <button class="d" data-k="ccw">↺</button>
+      <button class="r" data-k="cw"><svg viewBox="0 0 24 24" width="62%" height="62%" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3.5v5h-5"/></svg></button>
+      <button class="d" data-k="ccw"><svg viewBox="0 0 24 24" width="62%" height="62%" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform:scaleX(-1)"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3.5v5h-5"/></svg></button>
     </div>
   </div>
 </div>
