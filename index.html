@@ -84,7 +84,7 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
     </div>
     <div class="card">
       <h3>ルール</h3>
-      <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、通常のライン消去の攻撃で相殺できます。お邪魔ライン自体を消しても攻撃は発生しません。<br>ハンデ：部屋を作る人が、プレイヤーごとに「送るお邪魔の倍率」と「開始時のお邪魔ライン」を設定できます（対戦前に両方へ表示されます）。</p>
+      <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、通常のライン消去の攻撃で相殺できます。お邪魔ライン自体を消しても攻撃は発生しません。<br>ハンデ：部屋を作る人が、プレイヤーごとに「送るお邪魔の倍率」「開始時のお邪魔ライン」「1段消しでもお邪魔を送るか」を設定できます（対戦前に両方へ表示されます）。</p>
     </div>
   </div>
 
@@ -100,14 +100,16 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
     </div>
     <div class="card">
       <h3>ハンデ設定</h3>
-      <p>倍率は「そのプレイヤーが送るお邪魔の量」にかかります（0.5なら半分）。開始時のお邪魔は、対戦開始時に盤面の下に積まれる段数です。相手が入る前に決めてください（対戦開始後は変更できません）。</p>
+      <p>倍率は「そのプレイヤーが送るお邪魔の量」にかかります（0.5なら半分）。開始時のお邪魔は、対戦開始時に盤面の下に積まれる段数です。「1段消しでお邪魔」をありにすると、通常は送られない1段消しでもお邪魔1段（倍率適用前）が送られます。相手が入る前に決めてください（対戦開始後は変更できません）。</p>
       <div class="hc">
         <div class="who">あなた（ホスト）</div>
         <div><label for="hcHm">送るお邪魔の倍率</label><select id="hcHm"></select></div>
         <div><label for="hcHs">開始時のお邪魔</label><select id="hcHs"></select></div>
+        <div><label for="hcHo">1段消しでお邪魔</label><select id="hcHo"></select></div>
         <div class="who">相手（ゲスト）</div>
         <div><label for="hcGm">送るお邪魔の倍率</label><select id="hcGm"></select></div>
         <div><label for="hcGs">開始時のお邪魔</label><select id="hcGs"></select></div>
+        <div><label for="hcGo">1段消しでお邪魔</label><select id="hcGo"></select></div>
       </div>
     </div>
   </div>
@@ -192,18 +194,18 @@ let myReady = false, oppReady = false, lastResult = null, firstRound = true;
 let isHost = false;
 
 /* ===================== ハンデ ===================== */
-// m: 自分が送るお邪魔の倍率 / s: 開始時に盤面の下へ積むお邪魔の段数（ホスト・ゲストそれぞれ）
+// m: 自分が送るお邪魔の倍率 / s: 開始時に盤面の下へ積むお邪魔の段数 / o: 1段消しでもお邪魔を送るか（0/1）（ホスト・ゲストそれぞれ）
 const HC_MULTS = [0.25,0.5,0.75,1,1.25,1.5,2,3], HC_MAXS = 8;
-let HC = { h:{m:1,s:0}, g:{m:1,s:0} };
-function cleanSide(o){
-  const m = Number(o && o.m), s = Number(o && o.s);
-  return { m: HC_MULTS.includes(m) ? m : 1, s: Number.isInteger(s) ? Math.max(0,Math.min(HC_MAXS,s)) : 0 };
+let HC = { h:{m:1,s:0,o:0}, g:{m:1,s:0,o:0} };
+function cleanSide(x){
+  const m = Number(x && x.m), s = Number(x && x.s), o = Number(x && x.o);
+  return { m: HC_MULTS.includes(m) ? m : 1, s: Number.isInteger(s) ? Math.max(0,Math.min(HC_MAXS,s)) : 0, o: o===1 ? 1 : 0 };
 }
 function cleanHc(h){ return { h:cleanSide(h && h.h), g:cleanSide(h && h.g) }; }
 const myHc  = () => isHost ? HC.h : HC.g;
 const oppHc = () => isHost ? HC.g : HC.h;
-const hcLabel = c => '送るお邪魔 ×'+c.m+'　開始時 +'+c.s+'段';
-const hcIsDefault = () => [HC.h,HC.g].every(c=>c.m===1&&c.s===0);
+const hcLabel = c => '送るお邪魔 ×'+c.m+'　開始時 +'+c.s+'段'+(c.o?'　1段消しでも送る':'');
+const hcIsDefault = () => [HC.h,HC.g].every(c=>c.m===1&&c.s===0&&c.o===0);
 
 const emptyBoard = () => Array.from({length:ROWS},()=>new Array(COLS).fill(0));
 
@@ -296,6 +298,7 @@ function lockPiece(){
     let atk = 0;
     if (normal>0) {
       atk = ATK[Math.min(normal,4)];
+      if (normal===1 && myHc().o) atk = 1;   // ハンデ：1段消しでもお邪魔を送る
       if (G.combo>0) atk += Math.min(4, Math.ceil(G.combo/2));
       if (G.board.every(row=>row.every(v=>!v))) atk += 6;
     }
@@ -488,11 +491,12 @@ function fillSelect(id,vals,def,fmt){
   const el=$(id); el.innerHTML='';
   vals.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=fmt(v); if(v===def) o.selected=true; el.appendChild(o); });
 }
-const MULT_FMT=v=>'×'+v+(v===1?'（ハンデなし）':''), START_FMT=v=>v===0?'なし':v+'段';
+const MULT_FMT=v=>'×'+v+(v===1?'（ハンデなし）':''), START_FMT=v=>v===0?'なし':v+'段', ONE_FMT=v=>v===0?'なし':'あり';
 ['hcHm','hcGm'].forEach(id=>fillSelect(id,HC_MULTS,1,MULT_FMT));
 ['hcHs','hcGs'].forEach(id=>fillSelect(id,Array.from({length:HC_MAXS+1},(_,i)=>i),0,START_FMT));
+['hcHo','hcGo'].forEach(id=>fillSelect(id,[0,1],0,ONE_FMT));
 function readHcUi(){
-  HC=cleanHc({h:{m:$('hcHm').value,s:$('hcHs').value},g:{m:$('hcGm').value,s:$('hcGs').value}});
+  HC=cleanHc({h:{m:$('hcHm').value,s:$('hcHs').value,o:$('hcHo').value},g:{m:$('hcGm').value,s:$('hcGs').value,o:$('hcGo').value}});
 }
 function inviteLink(){ return location.origin+location.pathname+'?r='+roomCode; }
 $('btnHost').onclick=async()=>{ if(!await openServer()) return; isHost=true; ws.send(JSON.stringify({t:'create'})); };
@@ -646,9 +650,9 @@ function render(){
 
   /* 統計・操作ヒント */
   if (!hcIsDefault()) {
-    text('ハンデ（送る倍率／開始段）',OX,BY+12.7,0.5,'#fbbf24');
-    text('YOU  ×'+myHc().m+'  +'+myHc().s+'段',OX,BY+13.4,0.6,'#e6e9f5');
-    text('OPP  ×'+oppHc().m+'  +'+oppHc().s+'段',OX,BY+14.1,0.6,'#e6e9f5');
+    text('ハンデ（送る倍率／開始段／1段）',OX,BY+12.7,0.5,'#fbbf24');
+    text('YOU  ×'+myHc().m+'  +'+myHc().s+'段'+(myHc().o?' 1段○':''),OX,BY+13.4,0.6,'#e6e9f5');
+    text('OPP  ×'+oppHc().m+'  +'+oppHc().s+'段'+(oppHc().o?' 1段○':''),OX,BY+14.1,0.6,'#e6e9f5');
   }
   if (G) {
     text('送ったお邪魔  '+G.sent,OX,BY+15.2,0.65,'#e6e9f5');
