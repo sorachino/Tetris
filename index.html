@@ -84,7 +84,7 @@ input.code{width:100%;border-radius:10px;border:1px solid var(--line);background
     </div>
     <div class="card">
       <h3>ルール</h3>
-      <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、自分が消去すれば相殺できます。<br>ハンデ：部屋を作る人が、プレイヤーごとに「送るお邪魔の倍率」と「開始時のお邪魔ライン」を設定できます（対戦前に両方へ表示されます）。</p>
+      <p>ライン消去でお邪魔ラインを相手に送ります（2段=1、3段=2、テトリス=4、コンボ・パーフェクトクリアで加算）。先にフィールドが埋まった方が負け。送られたお邪魔は、通常のライン消去の攻撃で相殺できます。お邪魔ライン自体を消しても攻撃は発生しません。<br>ハンデ：部屋を作る人が、プレイヤーごとに「送るお邪魔の倍率」と「開始時のお邪魔ライン」を設定できます（対戦前に両方へ表示されます）。</p>
     </div>
   </div>
 
@@ -285,16 +285,20 @@ function pendingTotal(){ return G.pending.reduce((s,p)=>s+p.n,0); }
 function lockPiece(){
   const c=G.cur, idx=TYPES.indexOf(c.t)+1;
   for (const [r,cc] of SHAPES[c.t][c.rot]) G.board[c.y+r][c.x+cc]=idx;
-  let cleared=0;
+  let cleared=0, clearedG=0;
   for (let r=ROWS-1;r>=0;r--) {
-    if (G.board[r].every(v=>v)) { G.board.splice(r,1); G.board.unshift(new Array(COLS).fill(0)); cleared++; r++; }
+    if (G.board[r].every(v=>v)) { if (G.board[r].includes(8)) clearedG++; G.board.splice(r,1); G.board.unshift(new Array(COLS).fill(0)); cleared++; r++; }
   }
   if (cleared) {
     G.combo++;
     G.lines += cleared;
-    let atk = ATK[Math.min(cleared,4)];
-    if (G.combo>0) atk += Math.min(4, Math.ceil(G.combo/2));
-    if (G.board.every(row=>row.every(v=>!v))) atk += 6;
+    const normal = cleared - clearedG;   // お邪魔段（セル値8を含む段）の消去では攻撃は発生しない
+    let atk = 0;
+    if (normal>0) {
+      atk = ATK[Math.min(normal,4)];
+      if (G.combo>0) atk += Math.min(4, Math.ceil(G.combo/2));
+      if (G.board.every(row=>row.every(v=>!v))) atk += 6;
+    }
     { const tot=atk*myHc().m+G.carry; atk=Math.floor(tot+1e-9); G.carry=tot-atk; }   // ハンデ倍率（端数は次回に持ち越し）
     while (atk>0 && G.pending.length) {           // 相殺
       const p=G.pending[0], d=Math.min(atk,p.n);
